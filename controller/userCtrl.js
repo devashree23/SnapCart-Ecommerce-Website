@@ -1,5 +1,9 @@
 const expressAsyncHandler = require("express-async-handler");
 const User= require("../models/userModel");
+const Product= require("../models/productModel");
+const Cart= require("../models/cartModel");
+const Coupon= require("../models/couponModel");
+const Order= require("../models/orderModel");
 const jwt= require("jsonwebtoken");
 const { generateToken } = require("../config/jwtToken");
 const { generateRefreshToken } = require("../config/refreshToken");
@@ -58,6 +62,43 @@ const loginUserCtrl= expressAsyncHandler(async (req,res) => {
     }
 });
 
+//admin-login
+const loginAdmin= expressAsyncHandler(async (req,res) => {
+    const {email,password}= req.body; //destructuring
+    const findAdmin=await User.findOne({email});
+    if(findAdmin.role !== "admin"){
+        throw new Error("Not Authorized!!");
+    }
+    //check if the user exists or not
+    if(findAdmin && (await findAdmin.isPasswordMatched(password))){
+        const refreshToken =await generateRefreshToken(findAdmin?.id);
+        const updateToken = await User.findByIdAndUpdate(
+            findAdmin.id,
+            {
+            refreshToken: refreshToken,
+            },
+            {
+                new: true
+            });
+            //httpOnly ensures that the cookie is only accessible via HTTP req, not JS
+            //max-age- the cookie will expire in 72 hrs frome time set
+            res.cookie("refreshToken",refreshToken,{
+                httpOnly: true,
+                maxAge: 72*60*60*1000,
+            });
+        res.json({
+            _id: findAdmin?._id,
+            firstname: findAdmin?.firstname,
+            lastname: findAdmin?.lastname,
+            email: findAdmin?.email,
+            mobile:findAdmin?.mobile,
+            token: generateToken(findAdmin?._id)
+            });
+    }else{
+        throw new Error("Invalid Credentials");
+    }
+});
+
 //Get all users
 const getAllUsers= expressAsyncHandler (async (req,res) => {
     try {
@@ -108,6 +149,29 @@ const updatedUser= expressAsyncHandler(async (req,res) => {
         throw new Error(error, "Updating error");
     }
 });
+
+//save user Address
+const saveAddress= expressAsyncHandler(async (req, res, next) => {
+    const {id}= req.user;
+    validateMongodbId(id);
+    try {
+        const saveAdd= await User.findByIdAndUpdate(id,
+            {
+                address: req?.body?.address,
+            },
+            {
+                new : true,
+            }
+        );
+        res.json({
+            msg: "USERs ADDRESS SAVED!",
+            saveAdd
+        });    
+    } catch (error) {
+        throw new Error(error,"Error while saving the address...");
+    }
+});
+
 
 //delete a user
 const deleteSingleUser= expressAsyncHandler(async (req,res) => {
@@ -265,7 +329,7 @@ const forgotPasswordToken= expressAsyncHandler(async (req,res) => {
     }
     try {
         const token= await user.createPasswordResetToken();
-        console.log(token,"Forgot password****");
+    console.log(token,"Forgot password****");
         await user.save();
         const resetUrl= `Hi! Please follow this link to reset your password. This link is valid for 10 minutes from now on. <a href="http://localhost:5000/api/user/reset-password/${token}">Click Here</a>`
         const data={
@@ -301,6 +365,186 @@ const resetPassword= expressAsyncHandler(async (req,res) => {
    }
 });
 
+const getWishlist= expressAsyncHandler(async (req,res) => {
+    const {_id}= req.user;
+    //console.log(req.user, "CART");
+    try {
+        const findUser= await User.findById(_id).populate("wishlist");
+        res.json({findUser, msg:"User's Wishlist"});
+        console.log(findUser,"User's Wishlist");
+    } catch (error) {
+        throw new Error(error,"Error while fetching the wishlist...")
+    }
+});
+
+const userCart= expressAsyncHandler(async (req , res) => {
+    // console.log(req.user, "CART");
+    const {cart}= req.body;
+    const {_id}= req.user;
+    validateMongodbId(_id);
+
+    try {
+        let products= [];
+        const user= await User.findById(_id);
+        //check if user already have product in the cart
+        const alreadyExistInCart= await Cart.findOne({orderBy: user._id });
+        if(alreadyExistInCart){
+            alreadyExistInCart.remove();
+        }
+        for(let i=0; i< cart.length; i++){
+            let object= {};
+            object.product= cart[i]._id;
+            object.count= cart[i].count;
+            object.color= cart[i].color;
+            let getPrice= await Product.findById(cart[i]._id).select("price").exec();
+            object.price = getPrice.price;
+            products.push(object);
+        }
+        console.log(products);
+
+        let cartTotal= [];
+        for(let i=0 ; i< product.length ; i++){
+            cartTotal= cartTotal + product[i].price * products[i].count;
+        }
+
+        let newCart= await new Cart({
+            products,cartTotal,orderBy: user?.id,
+        }).save();
+        res.json(newCart);
+
+    } catch (error) {
+        throw new Error(error, "Error while placing order...")
+    }
+});
+
+const getUserCart= expressAsyncHandler(async (req,res) => {
+   //res.send("Hello guys");
+   const {_id}= req.user;
+   validateMongodbId(_id);
+   try {
+    const cart= await Cart.findOne({
+        orderBy: _id
+    }).populate("products.product", "_id title price");
+    res.json(cart);
+   } catch (error) {
+    throw new Error(error, "Error while fetching items from the cart...")
+   }
+});
+const emptyCart= expressAsyncHandler(async (req,res) => {
+   //res.send("Hello guys");
+   const {_id}= req.user;
+   validateMongodbId(_id);
+   try {
+    const user= await User.findOne({_id});
+    const cart= await Cart.findOneAndDelete({ orderBy: user._id })
+
+    res.json(cart);
+   } catch (error) {
+    throw new Error(error, "Error while fetching items from the cart...")
+   }
+});
+
+const applyCoupon= expressAsyncHandler(async (req, res) => {
+    const {coupon} = req.body;  
+    const {_id} = req.user;  
+    const validCoupon= await Coupon.findOne({name: coupon});
+    console.log(validCoupon);
+    if(validCoupon === null){
+        throw new Error("Invalid Coupon...")
+    }
+    const user = await User.findOne({ _id});
+    let {cartTotal}= await Cart.findOne({ orderBy: user._id}).populate("products.product");
+    let totalAfterDiscount= (cartTotal - (cartTotal * validCoupon.discount)/100).toFixed(2);
+    await Cart.findOneAndUpdate({orderBy: user._id},
+        {totalAfterDiscount},{new : true}
+    );
+    res.json(totalAfterDiscount);
+});
+
+const createOrder= expressAsyncHandler(async (req,res) => {
+    const { COD , couponApplied }= req.body;
+    const {_id}= req.user;
+    validateMongodbId(_id);
+    try {
+        if(!COD){
+            throw new Error("Create cash order failed...")
+        }
+        const user= await User.findById(_id);
+        let userCart= await Cart.findOne({orderBy: user._id});
+        let finalAmount=0;
+        if(couponApplied && userCart.totalAfterDiscount){
+            finalAmount= userCart.totalAfterDiscount * 100;
+        }else{
+            finalAmount= userCart.cartTotal * 100;
+        }
+        let newOrder= await new Order({
+            products: userCart.products,
+            paymentIntent:{
+                id: uniqid(),
+                method:"COD",
+                amount: finalAmount,
+                status: "Cash On Delivery",
+                created: Date.now(),
+                currency: "usd",
+            }
+        }).save();
+
+        // let update= userCart.products.map((item)=>{
+        //     return {
+        //         updateOne: {
+        //             filter: { _id: item.product._id },
+        //             update: { $inc: { quantity: -item.count, sold: +item.count } },
+
+        //         },
+        //     },
+        // });
+
+        const updated= await Product.bulkWrite(update, {});
+        res.json({message: "Succes"});
+
+    } catch (error) {
+        throw new Error(error, "Error while placing order...")
+    }
+});
+
+const getOrders= expressAsyncHandler(async (req,res) => {
+    const {_id}= req.user;
+    validateMongodbId(_id);
+    try {
+        const userorders= await Order.findOne({orderBy: _id}).populate('products.product').exec();
+        res.json(userorders);
+    } catch (error) {
+        throw new Error(error,"Error while fetching order details...")
+    }
+});
+
+const updateOrderStatus= expressAsyncHandler(async (req,res) => {
+    console.log("UPDATED ORDER...")
+    const {status} = req.body;
+    console.log(req.body,"UPDATED ORDER STATUS...")
+    const {id} = req.params;
+    console.log(req.params,"UPDATED ORDER IDs...")
+    validateMongodbId(id);
+   try {
+    const updateOrderStatus= await Order.findByIdAndUpdate(
+        id,
+        {
+            orderStatus: status ,
+            paymentIntent:{
+                status: status,
+            },
+        },
+        {
+            new: true,
+        }
+    );
+    res.json(updateOrderStatus);
+   } catch (error) {
+    throw new Error(error,"Error while updating order status...")
+   } 
+});
+
 
 module.exports= {createUser , loginUserCtrl, getAllUsers, getSingleUser,updatedUser, deleteSingleUser,
-    unblockUser,blockUser,handleRefreshToken,logout, updatePassword, forgotPasswordToken,resetPassword }
+    unblockUser,blockUser,handleRefreshToken,logout, updatePassword, forgotPasswordToken,resetPassword,loginAdmin
+,getWishlist, saveAddress,userCart, getUserCart, emptyCart, applyCoupon,getOrders,createOrder,updateOrderStatus }

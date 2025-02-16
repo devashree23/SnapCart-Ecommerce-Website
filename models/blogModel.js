@@ -9,16 +9,14 @@ var blogSchema = new mongoose.Schema({
     description  :{
         type:String,
         required:true,
-        unique:true,
     },
     category:{
         type:String,
         required:true,
-        unique:true,
     },
     numViews:{
-        type:String,
-        required:true,
+        type: Number,
+        default: 0,
     },
     isLiked:{
         type: Boolean,
@@ -39,7 +37,7 @@ var blogSchema = new mongoose.Schema({
     }],
     image:{
         type:String,
-        default: "https://thumbs.dreamstime.com/b/blogging-blog-concepts-ideas-worktable-blogging-blog-concepts-ideas-white-worktable-110423482.jpg"
+        default: "https://thumbs.dreamstime.com/b/blogging-blog-concepts-ideas-worktable-blogging-blog-concepts-ideas-white-worktable-110423482.jpg",
     },
     author:{
         type: String,
@@ -56,4 +54,4 @@ var blogSchema = new mongoose.Schema({
 });
 
 //Export the model
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.model('Blog', blogSchema);

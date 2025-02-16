@@ -33,23 +33,13 @@ var productSchema = new mongoose.Schema({
         type: Number,
         required: true,
     },
-    images:{
-        type: Array,
-    },
+    images:[],
     color:{
         type: String,
         required: true,
         //enum: ['Black','Red','Brown'],
     },
-    rating:[
-        {
-            star: Number,
-            postedBy: {
-                type: mongoose.Schema.Types.ObjectId, 
-                ref: "User",
-            },
-        },
-    ],
+
     brand:{
         type: String,
         required: true,
@@ -58,6 +48,26 @@ var productSchema = new mongoose.Schema({
     sold:{
         type: Number,
         default: 0,
+    },
+    rating:{
+        type:[
+            {
+                star: {
+                    type: Number,
+                    min: 1,
+                    max: 5,
+                },
+                postedBy: {
+                    type: mongoose.Schema.Types.ObjectId, 
+                    ref: "User",
+                },
+            },
+        ],
+    default:[],
+    },
+    totalrating:{
+        type: String,
+        default:0,
     }
 },
 {

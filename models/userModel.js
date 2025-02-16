@@ -29,7 +29,7 @@ var userSchema = new mongoose.Schema({
     role:{
         type: String,
         enum:["user", "admin"],
-        default: "user",
+        default: "admin",
     },
     isBlocked:{
         type:Boolean,
@@ -39,7 +39,10 @@ var userSchema = new mongoose.Schema({
         type: Array,
         default: [],
     },
-    address: [{type: mongoose.Schema.Types.ObjectId , ref: "Address"}],
+    //address: [{type: mongoose.Schema.Types.ObjectId , ref: "Address"}],
+    address: {
+        type: String,
+    },
     wishlist: [{type: mongoose.Schema.Types.ObjectId , ref: "Product"}],
     refreshToken:{
         type: String,
